@@ -4,10 +4,13 @@ from typing import Optional
 from datetime import datetime
 
 # ── Request schemas (what client sends) ───────────────
+
+
 class PostCreate(BaseModel):
     title:   str = Field(..., min_length=3, max_length=200)
     content: str = Field(..., min_length=10)
     author:  str = Field(..., min_length=2, max_length=100)
+
 
 class PostUpdate(BaseModel):
     title:     Optional[str] = Field(None, min_length=3, max_length=200)
@@ -15,6 +18,8 @@ class PostUpdate(BaseModel):
     published: Optional[bool] = None
 
 # ── Response schemas (what server returns) ────────────
+
+
 class PostResponse(BaseModel):
     id:         int
     title:      str
@@ -25,6 +30,7 @@ class PostResponse(BaseModel):
 
     class Config:
         from_attributes = True  # allows ORM model → Pydantic
+
 
 class PostListResponse(BaseModel):
     total: int

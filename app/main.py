@@ -33,6 +33,8 @@ app.add_middleware(
 # ── Middleware: Request Logging ────────────────────────
 # This runs BEFORE and AFTER every request
 # Teaches: @app.middleware("http"), call_next, request_id
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
