@@ -1,0 +1,160 @@
+# .github/workflows/deploy.yml
+# ══════════════════════════════════════════════════════
+# CI/CD PIPELINE FOR BLOG API
+#
+# WHAT HAPPENS:
+# Every push to main branch:
+#   1. CI: Run tests + lint (catches bugs)
+#   2. CD: Build Docker image + push to registry
+#   3. Deploy: Pull new image on server + restart
+#
+# HOW TO READ THIS FILE:
+#   on: → when to trigger
+#   jobs: → what to do
+#   steps: → individual actions within a job
+#   needs: → this job waits for another to finish
+# ══════════════════════════════════════════════════════
+
+name: Blog API CI/CD Pipeline
+
+# ── TRIGGER ────────────────────────────────────────────
+on:
+  push:
+    branches: [main, develop]       # runs when code pushed to main or develop
+  pull_request:
+    branches: [main]                # runs when PR opened against main
+
+# ══════════════════════════════════════════════════════
+# JOB 1: TEST (Continuous Integration)
+# Runs automatically on every push
+# ══════════════════════════════════════════════════════
+jobs:
+  test:
+    name: "Run Tests & Lint"
+    runs-on: ubuntu-latest          # GitHub provides this machine for free
+
+    # Start a real PostgreSQL for integration tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: blogdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # Step 1: Checkout your code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'              # cache pip downloads — faster builds
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov httpx
+
+      # Step 4: Lint check — catches code style errors
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 app/ --max-line-length=100 --exclude=__pycache__
+
+      # Step 5: Run tests with coverage
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5433/blogdb
+        run: |
+          pytest tests/ -v --cov=app --cov-report=xml
+        # If any test fails → pipeline stops here → no deployment
+
+      # Step 6: Upload coverage report (optional)
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+        continue-on-error: true     # don't fail if codecov is down
+
+# ══════════════════════════════════════════════════════
+# JOB 2: BUILD & PUSH (runs only on main branch)
+# ══════════════════════════════════════════════════════
+  build:
+    name: "Build & Push Docker Image"
+    runs-on: ubuntu-latest
+    needs: test                     # ONLY runs if test job passes
+    if: github.ref == 'refs/heads/main'  # ONLY on main branch (not PRs)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Login to Docker Hub (free registry)
+      # DOCKER_USERNAME and DOCKER_PASSWORD stored in GitHub Secrets
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Build and push image
+      # Tag with git commit SHA for traceability
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/blog-api:latest
+            ${{ secrets.DOCKER_USERNAME }}/blog-api:${{ github.sha }}
+          # github.sha = unique commit ID
+          # Using SHA means every deploy is traceable to a commit
+
+# ══════════════════════════════════════════════════════
+# JOB 3: DEPLOY (runs after successful build)
+# ══════════════════════════════════════════════════════
+  deploy:
+    name: "Deploy to Server"
+    runs-on: ubuntu-latest
+    needs: build                    # ONLY runs if build job passes
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}          # your server IP
+          username: ${{ secrets.SERVER_USER }}      # ssh username
+          key: ${{ secrets.SERVER_SSH_KEY }}        # private SSH key
+
+          script: |
+            # Pull latest image
+            docker pull ${{ secrets.DOCKER_USERNAME }}/blog-api:latest
+
+            # Stop old container
+            docker stop blog-api || true
+            docker rm blog-api || true
+
+            # Start new container
+            docker run -d \
+              --name blog-api \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              -e DATABASE_URL=${{ secrets.DATABASE_URL }} \
+              ${{ secrets.DOCKER_USERNAME }}/blog-api:latest
+
+            # Check it started correctly
+            sleep 5
+            curl -f http://localhost:8000/health || exit 1
+
+            echo "Deployment successful!"

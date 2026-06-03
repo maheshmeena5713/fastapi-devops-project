@@ -1,0 +1,64 @@
+# docker-compose.yml
+# ══════════════════════════════════════════════════════
+# WHAT THIS FILE DOES:
+# Runs your ENTIRE system with one command:
+#   docker-compose up --build
+#
+# Starts:
+#   1. PostgreSQL database (from official image)
+#   2. Your Blog API (built from Dockerfile)
+#   Both connected on the same Docker network
+# ══════════════════════════════════════════════════════
+
+version: '3.9'
+
+services:
+
+  # ── Service 1: PostgreSQL Database ──────────────────
+  db:
+    image: postgres:15-alpine # official PostgreSQL image, alpine = smaller
+    restart: unless-stopped # restart if it crashes
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: blogdb
+
+    ports:
+      - "5432:5432" # host_port:container_port
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # data persists between restarts
+
+    healthcheck:
+      # wait for postgres to be ready before API starts
+      test: [ "CMD-SHELL", "pg_isready -U admin -d blogdb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Service 2: Blog API ──────────────────────────────
+  api:
+    build: . # use Dockerfile in current directory
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000" # access API at localhost:8000
+
+    environment:
+      # db = hostname of the db service above
+      # Docker creates a network — services find each other by service name
+      DATABASE_URL: postgresql://postgres:password@localhost:5433/blogdb
+
+    depends_on:
+      db:
+        condition: service_healthy # wait for db health check to pass
+
+    volumes:
+      - .:/app # mount local code for hot reload in development
+      # REMOVE this volume line for production — use built image only
+
+      # ── Named Volumes ────────────────────────────────────
+      # Data stored here survives container restarts
+volumes:
+  postgres_data:
