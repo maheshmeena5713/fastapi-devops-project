@@ -35,3 +35,4 @@ class PostResponse(BaseModel):
 class PostListResponse(BaseModel):
     total: int
     posts: list[PostResponse]
+
