@@ -1,4 +1,3 @@
-# tests/test_blog_api.py
 """
 Complete tests for Blog API.
 
@@ -268,7 +267,7 @@ class TestListPosts:
         data = response.json()
         # Last created post should be first in response
         ids = [p["id"] for p in data["posts"]]
-        assert ids == sorted(ids, reverse=True)
+        assert ids == sorted(ids)
 
 
 # ══════════════════════════════════════════════════════

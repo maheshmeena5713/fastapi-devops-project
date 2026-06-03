@@ -74,7 +74,7 @@ def log_post_created(post_id: int, title: str, author: str):
         post_id=post_id,
         title=title,
         author=author,
-        event="NEW_POST"
+        action="NEW_POST"
     )
 
 

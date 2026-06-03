@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -21,15 +21,14 @@ class PostUpdate(BaseModel):
 
 
 class PostResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)  # ← new style
+
     id:         int
     title:      str
     content:    str
     author:     str
     published:  bool
     created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True  # allows ORM model → Pydantic
 
 
 class PostListResponse(BaseModel):
